@@ -38,7 +38,7 @@ def http_session() -> requests.Session:
     session = requests.Session()
     retry = Retry(total=2, backoff_factor=0.7, status_forcelist=[429, 500, 502, 503, 504])
     session.mount("https://", HTTPAdapter(max_retries=retry))
-    session.headers.update({"Accept": "csvfile, text/csv;q=0.9", "User-Agent": "RERExplorer/1.0"})
+    session.headers.update({"Accept": "text/csv", "User-Agent": "RERExplorer/1.0"})
     return session
 
 
@@ -53,19 +53,26 @@ def get_series(code: str, kind: str) -> pd.Series:
     flow = "CPI" if kind == "CPI" else "ER"
     key = f"{code}.CPI._T.IX.M" if kind == "CPI" else f"{code}.XDC_USD.PA_RT.M"
     url = f"{BASE}/data/dataflow/IMF.STA/{flow}/~/{key}"
+    # SDMX 3.0 component filtering; startPeriod=1976-01 is not reliably
+    # accepted by this endpoint. IMF monthly period codes use YYYY-Mmm.
+    params = {"c[TIME_PERIOD]": "ge:1976-M01"}
     try:
         with http_session() as session:
-            response = session.get(
-                url,
-                params={"startPeriod": "1976-01", "attributes": "none"},
-                timeout=(8, 35),
-            )
+            response = session.get(url, params=params, timeout=(10, 45))
     except requests.RequestException as exc:
-        raise IMFError(f"Could not contact IMF for {kind} ({code}): {exc}") from exc
+        raise IMFError(
+            f"IMF request failed for {kind} ({code}). "
+            f"Check whether the series exists and whether the IMF API is available. "
+            f"Request: {url} with {params}. Details: {exc}"
+        ) from exc
     if response.status_code == 204:
         return pd.Series(dtype="float64", name=f"{code}_{kind}")
     if not response.ok:
-        raise IMFError(f"IMF returned HTTP {response.status_code} for {kind} ({code}). URL: {response.url}")
+        raise IMFError(
+            f"IMF returned HTTP {response.status_code} for {kind} ({code}). "
+            f"Request: {response.url}. This may indicate an unavailable series, "
+            "an API query incompatibility, or an IMF server failure."
+        )
     if not response.content.strip():
         return pd.Series(dtype="float64", name=f"{code}_{kind}")
     try:
