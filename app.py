@@ -179,11 +179,11 @@ def main() -> None:
     with st.sidebar:
         st.header("Settings")
         first = st.selectbox("Country 1", names, index=names.index("United States"))
-        second = st.selectbox("Country 2", names, index=names.index("Euro area"))
+        second = st.selectbox("Country 2", names, index=names.index("United Kingdom"))
         start_date = st.date_input("Start month", date(2000, 1, 1), min_value=date(1976, 1, 1), max_value=date.today())
         end_date = st.date_input("End month", date.today(), min_value=date(1976, 1, 1), max_value=date.today())
         mode = st.radio("Chart mode", ["Real", "Nominal", "Both"], horizontal=True)
-        st.caption("Only the year and month of each date are used.")
+        st.caption("Only the year and month of each date are used. Euro area availability is still being investigated.")
     start, end = pd.Period(start_date, freq="M"), pd.Period(end_date, freq="M")
     if start > end:
         st.error("Start month must not be later than end month.")
