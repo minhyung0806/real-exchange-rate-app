@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date
 from io import StringIO
 import calendar
+import functools
 import re
 
 import numpy as np
@@ -21,6 +22,19 @@ FIRST = pd.Period("1976-01", freq="M")
 COUNTRIES = {country.name: country.alpha_3 for country in pycountry.countries}
 COUNTRIES["Euro area"] = "G163"
 COUNTRIES = dict(sorted(COUNTRIES.items()))
+CURRENCY_OVERRIDES = {"USA": "USD", "GBR": "GBP", "G163": "EUR"}
+
+@functools.lru_cache(maxsize=512)
+def currency_code(iso3: str) -> str:
+    if iso3 in CURRENCY_OVERRIDES:
+        return CURRENCY_OVERRIDES[iso3]
+    country = pycountry.countries.get(alpha_3=iso3)
+    if country is not None:
+        matches = pycountry.currencies.get(numeric=getattr(country, "numeric", ""))
+        if matches is not None and getattr(matches, "alpha_3", None):
+            return matches.alpha_3
+    return f"{iso3} currency"
+
 EXPORT_COLUMNS = [
     "Month", "Country 1", "Country 2", "CPI Country 1", "CPI Country 2",
     "Exchange Rate Country 1 (Currency 1 per USD)",
@@ -145,7 +159,7 @@ def chart(df: pd.DataFrame, mode: str, c1: str, c2: str) -> go.Figure:
     if mode in ("Nominal", "Both"):
         fig.add_trace(nominal, secondary_y=True) if both else fig.add_trace(nominal)
     real_label = "Real Exchange Rate Index (Sample Average = 100)"
-    nominal_label = f"{c2} currency per {c1} currency (S(t))"
+    nominal_label = f"{currency_code(COUNTRIES[c2])} per {currency_code(COUNTRIES[c1])} (S(t))"
     if both:
         fig.update_yaxes(title_text=real_label, secondary_y=False)
         fig.update_yaxes(title_text=nominal_label, secondary_y=True)
@@ -182,6 +196,9 @@ def main() -> None:
             st.error(str(exc))
             st.info("Try another country pair or refresh later. No synthetic data are substituted.")
             st.stop()
+    if "G163" in (code1, code2) and data.get(("G163", "CPI"), pd.Series(dtype=float)).dropna().empty:
+        st.error("The IMF CPI series G163.CPI._T.IX.M returned no observations. Euro area support is not yet verified; no substitute series has been used.")
+        st.info("This requires checking the IMF CPI dataflow availability/structure for the Euro area. Other country pairs can still be used.")
     for name, code in ((first, code1), (second, code2)):
         for kind in ("CPI", "ER"):
             if data[(code, kind)].dropna().empty:
